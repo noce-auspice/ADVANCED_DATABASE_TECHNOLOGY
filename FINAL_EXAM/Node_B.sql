@@ -2,62 +2,75 @@
 -- Run it on each node after connecting to the respective database.
 
 -- Table: Field (Stores information about agricultural fields)
-CREATE TABLE Field (
-    field_id INTEGER PRIMARY KEY,
-    field_name VARCHAR(100) NOT NULL,
-    location VARCHAR(150),
-    size_acres NUMERIC
-);
 
--- Table: Crop (Stores types of crops)
-CREATE TABLE Crop (
-    crop_id INTEGER PRIMARY KEY,
-    crop_name VARCHAR(100) NOT NULL,
-    season VARCHAR(50)
-);
-
--- Table: Harvest (Main fact table for harvest records)
--- We will fragment this table later in A1.
-CREATE TABLE Harvest (
-    harvest_id INTEGER PRIMARY KEY,
-    field_id INTEGER NOT NULL,
-    crop_id INTEGER NOT NULL,
-    harvest_date DATE NOT NULL,
-    yield_kg NUMERIC NOT NULL CHECK (yield_kg > 0),
-    CONSTRAINT fk_harvest_field FOREIGN KEY (field_id) REFERENCES Field(field_id),
-    CONSTRAINT fk_harvest_crop FOREIGN KEY (crop_id) REFERENCES Crop(crop_id)
-);
-
-
--- Create Harvest_B table on Node_B
--- This table will hold fragment B of the Harvest data
 
 CREATE TABLE Harvest_B (
-    harvest_id INTEGER PRIMARY KEY,
-    field_id INTEGER NOT NULL,
-    crop_id INTEGER NOT NULL,
-    harvest_date DATE NOT NULL,
-    yield_kg NUMERIC NOT NULL CHECK (yield_kg > 0),
-    CONSTRAINT fk_harvest_field_b FOREIGN KEY (field_id) REFERENCES Field(field_id),
-    CONSTRAINT fk_harvest_crop_b FOREIGN KEY (crop_id) REFERENCES Crop(crop_id)
+    harvest_id SERIAL PRIMARY KEY,
+    crop_id INTEGER,
+    field_id INTEGER,
+    harvest_date DATE,
+    yield_kg DECIMAL(10,2),
+    fragment_flag INTEGER GENERATED ALWAYS AS (crop_id % 2) STORED
 );
 
--- Insert some sample data into Field and Crop (Total committed rows for project: 4)
--- These are not part of the 10-row budget for Harvest, but are necessary for joins.
-INSERT INTO Field VALUES (1, 'North Field', 'Valley Region', 50);
-INSERT INTO Field VALUES (2, 'South Field', 'Hill Region', 30);
-INSERT INTO Crop VALUES (101, 'Maize', 'Rainy');
-INSERT INTO Crop VALUES (102, 'Beans', 'Dry');
+-- Node_B: 5 rows with odd crop_id  
+INSERT INTO Harvest_B (crop_id, field_id, harvest_date, yield_kg) VALUES
+(1, 105, '2024-01-18', 1700.30),
+(3, 106, '2024-01-25', 2300.40),
+(5, 107, '2024-02-05', 1650.90),
+(7, 108, '2024-02-12', 1950.60),
+(9, 109, '2024-02-18', 2050.70);
 
--- Insert 5 rows into Harvest_B (on Node_B via dblink)
-INSERT INTO Harvest_B VALUES (6, 1, 102, '2023-09-05', 200);
-INSERT INTO Harvest_B VALUES (7, 2, 101, '2023-09-10', 400);
-INSERT INTO Harvest_B VALUES (8, 2, 101, '2023-09-15', 410);
-INSERT INTO Harvest_B VALUES (9, 1, 102, '2023-10-01', 210);
-INSERT INTO Harvest_B VALUES (10, 2, 102, '2023-10-05', 220);
 
--- Verify the data was inserted
-SELECT * FROM Harvest_B;
+-- A2: Database Link & Cross-Node Join (3–10 rows result)
+
+-- Create supporting tables on Node_B
+-- Field table on Node_B
+CREATE TABLE Field (
+    field_id INTEGER PRIMARY KEY,
+    field_name VARCHAR(100),
+    location VARCHAR(100),
+    size_hectares DECIMAL(10,2)
+);
+
+INSERT INTO Field VALUES
+(101, 'North Field', 'Northern Region', 50.0),
+(102, 'South Field', 'Southern Region', 75.5),
+(103, 'East Field', 'Eastern Region', 60.2),
+(104, 'West Field', 'Western Region', 45.8),
+(105, 'Central Field', 'Central Region', 80.0);
+
+-- Crop table on Node_B
+CREATE TABLE Crop (
+    crop_id INTEGER PRIMARY KEY,
+    crop_name VARCHAR(100),
+    crop_type VARCHAR(50),
+    planting_season VARCHAR(50)
+);
+
+INSERT INTO Crop VALUES
+(1, 'Maize', 'Cereal', 'Rainy'),
+(2, 'Beans', 'Legume', 'Dry'),
+(3, 'Wheat', 'Cereal', 'Cool'),
+(4, 'Rice', 'Cereal', 'Wet'),
+(5, 'Potatoes', 'Tuber', 'Cool');
+
+
+-- Session 2 (Node_B): Try to update same logical row (will wait)
+-- In different session:
+BEGIN;
+UPDATE dblink('proj_link', 'SELECT * FROM Harvest_B WHERE harvest_id = 1') AS remote_harvest
+SET yield_kg = yield_kg + 50;
+
+
+SELECT dblink_exec(
+    'proj_link',
+    'UPDATE Harvest_B SET yield_kg = yield_kg + 50 WHERE harvest_id = 1'
+);
+
+
+
+
 
 
 
